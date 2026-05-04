@@ -1,6 +1,5 @@
 !.env.example
 .env
-.env.*
 **/.env
 **/.env.*
 *.local

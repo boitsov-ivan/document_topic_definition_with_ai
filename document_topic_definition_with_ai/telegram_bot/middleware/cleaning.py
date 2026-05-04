@@ -1,5 +1,5 @@
 from aiogram import BaseMiddleware
-from aiogram.types import Update, Message
+from aiogram.types import Update
 import datetime
 
 class CleaningMiddleware(BaseMiddleware):

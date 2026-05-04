@@ -1,0 +1,22 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+
+COPY containers/requirements/base.txt .
+COPY containers/requirements/streamlit.txt .
+
+
+RUN pip install --no-cache-dir -r base.txt
+RUN pip install --no-cache-dir -r streamlit.txt
+
+
+COPY streamlit_app/ ./streamlit_app/
+COPY config.py ./streamlit_app/
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "streamlit_app/app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.enableCORS=false"]

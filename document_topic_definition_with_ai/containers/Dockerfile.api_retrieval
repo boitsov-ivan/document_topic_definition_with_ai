@@ -1,0 +1,36 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+
+
+COPY containers/requirements/base.txt .
+COPY containers/requirements/api_retrieval.txt .
+
+
+RUN pip install --no-cache-dir -r base.txt
+RUN pip install --no-cache-dir -r api_retrieval.txt
+
+
+
+COPY retrieval/ .
+COPY config.py .
+COPY docs_cleaned.csv .
+
+
+RUN mkdir -p /app/data/qdrant /app/data/logs /app/data/models_cache
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+
+EXPOSE 8000
+
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

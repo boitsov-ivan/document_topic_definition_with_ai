@@ -1,0 +1,31 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    git \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+#COPY containers/requirements/base.txt .
+COPY containers/requirements/api_ml_full.txt .
+
+#RUN pip install --no-cache-dir -r base.txt
+RUN pip install --no-cache-dir -r api_ml_full.txt
+
+
+COPY api_ml_full/ ./api_ml/
+COPY config.py .
+COPY .env .
+
+RUN mkdir -p /app/models/hub_classifier /app/models/tag_classifier /app/data/logs
+
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8001
+
+CMD ["uvicorn", "api_ml.main:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -1,0 +1,115 @@
+version: '1.0'
+
+services:
+  # QDRANT СЕРВЕР
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"  # REST API
+      - "6334:6334"  # gRPC API
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__LOG_LEVEL=INFO
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  # FASTAPI СЕРВИС ПОИСКА
+  search-api:
+    build:
+      context: .
+      dockerfile: containers/Dockerfile.api_retrieval
+    container_name: search-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - logs_data:/app/data/logs
+      - models_cache:/app/data/models_cache
+      - ./docs_cleaned.csv:/app/docs_cleaned.csv:ro
+    environment:
+      - DATA_DIR=/app/data
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - LOGS_PATH=/app/data/logs
+      - MODELS_CACHE=/app/data/models_cache
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      - qdrant
+
+  ml-api:
+    build:
+      context: .
+      dockerfile: containers/Dockerfile.api_ml
+      #dockerfile: containers/Dockerfile.api_ml_full
+    container_name: ml-api
+    ports:
+      - "8001:8001"
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8001
+      - PYTHONUNBUFFERED=1
+      - DATA_DIR=/app/data
+      - LOGS_PATH=/app/data/logs
+      - MODELS_CACHE=/app/data/models_cache
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # STREAMLIT UI
+  streamlit:
+    build:
+      context: .
+      dockerfile: containers/Dockerfile.streamlit
+    container_name: streamlit-ui
+    ports:
+      - "8501:8501"
+    depends_on:
+      - search-api
+    environment:
+      - API_URL=http://search-api:8000
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # TELEGRAM БОТ
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: containers/Dockerfile.bot
+    container_name: telegram-bot
+    depends_on:
+      - search-api
+    environment:
+      - API_URL=http://search-api:8000
+    env_file:
+      - .env
+    restart: unless-stopped
+
+volumes:
+  qdrant_storage:
+    name: qdrant_storage
+  logs_data:
+    name: logs_data
+  models_cache:
+    name: models_cache

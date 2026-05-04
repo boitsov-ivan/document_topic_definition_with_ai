@@ -16,21 +16,16 @@ def or_define_topic(document: str, api_key: str) -> str:
     
     
     answer = {}
-    keys = ["topics", "summary"]
+    #keys = ["topics", "summary"]
+    keys = ["summary"]
     
     prompts = {
-        "topics": "Ты эксперт по анализу текстов. Прочитай следующий текст и определи его основные темы, перечисли 3-10 основных тем через запятые маленькими буквами, а в конце поставь точку",
-        "summary": "Подготовь краткое summary текста длинной не более 100 слов"
+        "topics": "Ты эксперт по анализу текстов. Прочитай следующий текст и определи его основные темы, перечисли 3-10 основных тем через запятые маленькими буквами, а в конце поставь точку. Не включай в ответ промпт.",
+        "summary": "Подготовь краткое summary текста длинной не более 100 слов. Не включай в ответ промпт. Ответ должен начинаться сразу с пересказа."
     }
 
     for key in keys:
         prompt = f"{prompts[key]} Вот текст: {document}"
-
-        # if key == "topics":
-        #     model = "google/gemini-flash-1.5"
-        # elif key == "summary":
-        #     model = "openai/gpt-3.5-turbo"
-
  
         try:    
             data = {
@@ -57,14 +52,5 @@ def or_define_topic(document: str, api_key: str) -> str:
             continue
         time.sleep(1)
 
-    result = f"""
-📊 **Анализ документа**
-
-🎯 **Тематика документа:** {answer.get('topics', 'не определено')}
-
-📝 **Сниппет:**
-{answer.get('summary', 'не сгенерирован')}
-
-🤖 *Анализ документа выполнен с помощью Open Router API*
-"""
+    result = f"{answer.get('summary', 'Краткий пересказ не сгенерирован!')}"
     return result

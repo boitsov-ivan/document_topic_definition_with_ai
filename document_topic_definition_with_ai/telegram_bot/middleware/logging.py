@@ -1,5 +1,5 @@
 from aiogram import BaseMiddleware
-from aiogram.types import Update, Message, CallbackQuery
+from aiogram.types import Update
 import datetime
 
 class LoggingMiddleware(BaseMiddleware):

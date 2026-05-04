@@ -1,0 +1,28 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+
+COPY containers/requirements/base.txt .
+COPY containers/requirements/bot.txt .
+
+
+RUN pip install --no-cache-dir -r base.txt
+RUN pip install --no-cache-dir -r bot.txt
+
+
+COPY telegram_bot/ .
+COPY config.py .
+
+
+RUN mkdir -p /app/data /app/logs
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "-u", "bot.py"]

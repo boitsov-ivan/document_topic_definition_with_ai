@@ -1,8 +1,8 @@
 from aiogram import BaseMiddleware
-from aiogram.types import Update, Message, CallbackQuery
+from aiogram.types import Update
 from collections import defaultdict
 import time
-from typing import Union, Dict, Any, Callable
+from typing import Dict, Any, Callable
 
 
 class AntiSpamMiddleware(BaseMiddleware):
@@ -21,25 +21,21 @@ class AntiSpamMiddleware(BaseMiddleware):
         self.message_limit = message_limit
         self.time_window = time_window
         
-        # Храним время последнего сообщения для каждого пользователя
         self.user_last_message: Dict[int, float] = defaultdict(float)
         
-        # Храним историю сообщений для каждого пользователя
         self.user_message_history: Dict[int, list] = defaultdict(list)
         
-        # Исключения (например, для администраторов)
         self.exempt_users: set[int] = set()
 
     async def __call__(
         self,
         handler: Callable,
-        event: Update,  # Изменили Message на Update
+        event: Update,
         data: Dict[str, Any]
     ) -> Any:
         """
         Обработка входящего обновления
         """
-        # Получаем ID пользователя в зависимости от типа обновления
         user_id = None
         message = None
         
@@ -53,40 +49,33 @@ class AntiSpamMiddleware(BaseMiddleware):
             user_id = event.edited_message.from_user.id
             message = event.edited_message
         else:
-            # Для других типов обновлений пропускаем проверку
             return await handler(event, data)
         
-        # Проверяем, является ли пользователь исключением
         if user_id in self.exempt_users:
             return await handler(event, data)
         
         current_time = time.time()
         
-        # 1. Проверка минимального времени между сообщениями
         last_message_time = self.user_last_message.get(user_id, 0)
         
         if current_time - last_message_time < self.time_limit:
             time_left = self.time_limit - (current_time - last_message_time)
             
-            # Отправляем предупреждение только если есть куда отправить
             if message:
                 try:
                     await message.answer(
                         f"⏳ Слишком быстро! Подождите {time_left:.1f} сек."
                     )
                 except:
-                    pass  # Если не можем отправить ответ, просто игнорируем
+                    pass
             
-            return  # Прерываем обработку
+            return
         
-        # 2. Проверка ограничения по количеству сообщений во временном окне
-        # Очищаем старые записи
         self.user_message_history[user_id] = [
             t for t in self.user_message_history[user_id]
             if current_time - t <= self.time_window
         ]
         
-        # Проверяем лимит
         if len(self.user_message_history[user_id]) >= self.message_limit:
             if message:
                 try:
@@ -97,13 +86,11 @@ class AntiSpamMiddleware(BaseMiddleware):
                 except:
                     pass
             
-            return  # Прерываем обработку
+            return
         
-        # 3. Обновляем историю
         self.user_last_message[user_id] = current_time
         self.user_message_history[user_id].append(current_time)
         
-        # 4. Продолжаем обработку
         return await handler(event, data)
     
     def add_exempt_user(self, user_id: int) -> None:
@@ -125,7 +112,6 @@ class AntiSpamMiddleware(BaseMiddleware):
         """Получить статистику пользователя"""
         current_time = time.time()
         
-        # Очищаем старые записи перед получением статистики
         if user_id in self.user_message_history:
             self.user_message_history[user_id] = [
                 t for t in self.user_message_history[user_id]

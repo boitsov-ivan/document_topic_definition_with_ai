@@ -1,6 +1,6 @@
 import streamlit as st
+import time
 import requests
-import json
 from typing import List, Dict, Optional
 from config import config
 
@@ -27,7 +27,78 @@ if 'detected_tags' not in st.session_state:
 if 'filter_update_counter' not in st.session_state:
     st.session_state.filter_update_counter = 0
 
+
+if 'use_queue' not in st.session_state:
+    st.session_state.use_queue = True
+
 st.title("Поиск похожих документов в векторной базе")
+
+
+class QueueSearchClient:
+    """Клиент для поиска через очередь RabbitMQ"""
+    
+    def __init__(self, gateway_url: str):
+        self.gateway_url = gateway_url
+        self.timeout = 60
+    
+    def search(self, payload: Dict) -> Dict:
+        """Поиск через очередь с ожиданием результата"""
+        try:
+            response = requests.post(
+                f"{self.gateway_url}/api/v1/search",
+                json=payload,
+                timeout=5
+            )
+            response.raise_for_status()
+            task_id = response.json()["task_id"]
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            start_time = time.time()
+            
+            while time.time() - start_time < self.timeout:
+                result_response = requests.get(
+                    f"{self.gateway_url}/api/v1/search/result/{task_id}",
+                    timeout=2
+                )
+                
+                if result_response.status_code == 200:
+                    result_data = result_response.json()
+                    elapsed = int(time.time() - start_time)
+                    progress_bar.progress(min(elapsed / self.timeout, 0.95))
+                    status_text.text(f"Поиск... {elapsed} сек")
+                    
+                    if "results" in result_data:
+                        progress_bar.progress(1.0)
+                        status_text.empty()
+                        return result_data
+                    
+                    if result_data.get("status") == "failed":
+                        progress_bar.empty()
+                        status_text.empty()
+                        return {"error": result_data.get("message", "Unknown error"), "results": []}
+                
+                time.sleep(0.5)
+            
+            progress_bar.empty()
+            status_text.empty()
+            return {"error": "Превышено время ожидания", "results": []}
+            
+        except requests.exceptions.RequestException as e:
+            return {"error": f"Ошибка очереди: {e}", "results": []}
+    
+    def health_check(self) -> bool:
+        """Проверка доступности gateway"""
+        try:
+            response = requests.get(f"{self.gateway_url}/api/v1/search/health", timeout=2)
+            return response.status_code == 200
+        except:
+            return False
+
+
+if 'queue_client' not in st.session_state:
+    gateway_url = config.API_URL
+    st.session_state.queue_client = QueueSearchClient(gateway_url)
 
 def call_ml_classification(text: str, task: str) -> Optional[Dict]:
     """
@@ -158,11 +229,15 @@ def get_summary(query_text: str):
 with st.sidebar:
     st.header("⚙️ Настройки поиска")
     
+    use_queue = st.toggle("🔁 Использовать очередь (RabbitMQ)", value=st.session_state.use_queue, 
+                          help="Включите для асинхронной обработки через очередь")
+    st.session_state.use_queue = use_queue
+    
     default_engines = ["dense", "hybrid", "rerank", "full"]
     engines = default_engines.copy()
     
     try:
-        response = requests.get(f"{config.API_URL}/api/v1/search/engines", timeout=5)
+        response = requests.get(f"{config.SEARCH_API_URL}/api/v1/search/engines", timeout=5)
         if response.status_code == 200:
             data = response.json()
             engines = data.get("engines", default_engines)
@@ -345,73 +420,74 @@ if search_button and query:
             st.info("🔍 Поиск без фильтров (используются все документы)")
         
         try:
-            response = requests.post(
-                f"{config.API_URL}/api/v1/search/",
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                results = data.get("results", [])
-                total = data.get("total", len(results))
+            if st.session_state.use_queue:
+                result = st.session_state.queue_client.search(payload)
                 
-                st.success(f"✅ Найдено {total} результатов")
-                
-                if not results:
-                    st.info("По вашему запросу ничего не найдено. Попробуйте изменить запрос или настройки поиска.")
-                
-                for idx, result in enumerate(results, 1):
-                    with st.container():
-                        st.markdown(f"### {idx}. {result.get('title', 'Без названия')}")
-                        
-                        score = result.get('score')
-                        if score is not None:
-                            st.markdown(f"**Score:** {score:.4f}" if isinstance(score, float) else f"**Score:** {score}")
-                        
-                        url = result.get('url')
-                        if url:
-                            st.markdown(f"**URL:** {url}")
-                            # Добавляем кликабельную ссылку на документ
-                            st.markdown(f"[🔗 Открыть документ]({url})")
-                        
-                        if result.get('hubs'):
-                            st.markdown(f"**Хабы:** {', '.join(result['hubs'][:3])}")
-                        if result.get('tags'):
-                            st.markdown(f"**Теги:** {', '.join(result['tags'][:5])}")
-                        
-                        full_text = result.get('text', '')
-                        if full_text:
-                            with st.expander("📄 Показать ближайший по смыслу фрагмент документа", expanded=False):
-                                st.text_area(
-                                    "Ближайший по смыслу фрагмент документа:",
-                                    value=full_text,
-                                    height=200,
-                                    key=f"full_text_{idx}_{result.get('id', idx)}",
-                                    disabled=True,
-                                    label_visibility="collapsed"
-                                )
-                        
-                        st.divider()
-                        
-            elif response.status_code == 422:
-                st.error("❌ Ошибка 422: Неверный формат запроса")
-                try:
-                    error_detail = response.json()
-                    st.code(json.dumps(error_detail, indent=2, ensure_ascii=False), language="json")
-                except:
-                    st.code(response.text, language="text")
+                if result.get("error"):
+                    st.warning(f"⚠️ Очередь недоступна: {result['error']}")
+                    st.info("🔄 Пробуем прямой запрос к API...")
+                    response = requests.post(
+                        f"{config.SEARCH_API_URL}/api/v1/search/",
+                        json=payload,
+                        headers={"Content-Type": "application/json"},
+                        timeout=30
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                else:
+                    data = result
             else:
-                st.error(f"❌ Ошибка API: {response.status_code}")
-                try:
-                    error_detail = response.json()
-                    st.code(json.dumps(error_detail, indent=2, ensure_ascii=False), language="json")
-                except:
-                    st.code(response.text, language="text")
-                
+                response = requests.post(
+                    f"{config.SEARCH_API_URL}/api/v1/search/",
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=30
+                )
+                response.raise_for_status()
+                data = response.json()
+            
+            results = data.get("results", [])
+            total = data.get("total", len(results))
+            
+            st.success(f"✅ Найдено {total} результатов")
+            
+            if not results:
+                st.info("По вашему запросу ничего не найдено. Попробуйте изменить запрос или настройки поиска.")
+            
+            for idx, result in enumerate(results, 1):
+                with st.container():
+                    st.markdown(f"### {idx}. {result.get('title', 'Без названия')}")
+                    
+                    score = result.get('score')
+                    if score is not None:
+                        st.markdown(f"**Score:** {score:.4f}" if isinstance(score, float) else f"**Score:** {score}")
+                    
+                    url = result.get('url')
+                    if url:
+                        st.markdown(f"**URL:** {url}")
+                        st.markdown(f"[🔗 Открыть документ]({url})")
+                    
+                    if result.get('hubs'):
+                        st.markdown(f"**Хабы:** {', '.join(result['hubs'][:3])}")
+                    if result.get('tags'):
+                        st.markdown(f"**Теги:** {', '.join(result['tags'][:5])}")
+                    
+                    full_text = result.get('text', '')
+                    if full_text:
+                        with st.expander("📄 Показать ближайший по смыслу фрагмент документа", expanded=False):
+                            st.text_area(
+                                "Ближайший по смыслу фрагмент документа:",
+                                value=full_text,
+                                height=200,
+                                key=f"full_text_{idx}_{result.get('id', idx)}",
+                                disabled=True,
+                                label_visibility="collapsed"
+                            )
+                    
+                    st.divider()
+                    
         except requests.exceptions.ConnectionError:
-            st.error(f"❌ Не удалось подключиться к API серверу ({config.API_URL})")
+            st.error(f"❌ Не удалось подключиться к API серверу ({config.SEARCH_API_URL})")
             st.info("Убедитесь, что search-api сервис запущен и доступен")
         except requests.exceptions.Timeout:
             st.error("❌ Превышено время ожидания ответа от сервера")
@@ -435,6 +511,7 @@ with st.expander("ℹ️ Информация"):
     3. **Краткий пересказ** - подготовит краткий пересказ введённого документа
     4. **Выберите фильтры** в боковой панели (хабы/теги), которые хотите применить для фильтрации документов в поисковой базе данных
     5. **Поиск** - найдет документы с учетом выбранных фильтров
+    6. **Использовать очередь** - включает асинхронную обработку через RabbitMQ (с прогресс-баром)
     
     ### API Endpoints
     - `POST /api/v1/search/` - поиск документов

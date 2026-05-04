@@ -1,4 +1,5 @@
 import httpx
+import time
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -9,6 +10,64 @@ from config import config
 
 router = Router()
 user_data_storage = {}
+
+
+class QueueSearchClient:
+    """Клиент для поиска через очередь RabbitMQ"""
+    
+    def __init__(self, gateway_url: str):
+        self.gateway_url = gateway_url
+        self.timeout = 60
+    
+    async def search(self, payload: dict) -> dict:
+        """Поиск через очередь с ожиданием результата"""
+        import asyncio
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.gateway_url}/api/v1/search",
+                    json=payload,
+                    timeout=5.0
+                )
+                response.raise_for_status()
+                task_id = response.json()["task_id"]
+                
+                start_time = time.time()
+                while time.time() - start_time < self.timeout:
+                    result_response = await client.get(
+                        f"{self.gateway_url}/api/v1/search/result/{task_id}",
+                        timeout=2.0
+                    )
+                    
+                    if result_response.status_code == 200:
+                        result_data = result_response.json()
+                        
+                        if "results" in result_data:
+                            return result_data
+                        
+                        if result_data.get("status") == "failed":
+                            return {"error": result_data.get("message", "Unknown error"), "results": []}
+                    
+                    await asyncio.sleep(0.5)
+                
+                return {"error": "Превышено время ожидания", "results": []}
+                
+        except Exception as e:
+            return {"error": f"Ошибка очереди: {e}", "results": []}
+    
+    async def health_check(self) -> bool:
+        """Проверка доступности gateway"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{self.gateway_url}/api/v1/search/health", timeout=2.0)
+                return response.status_code == 200
+        except:
+            return False
+
+
+gateway_url = "http://search-gateway:8002"
+queue_client = QueueSearchClient(gateway_url)
 
 @router.message(Command("upload_doc"))
 async def cmd_upload_doc(message: types.Message, or_api_key: str):
@@ -295,79 +354,84 @@ async def handle_search_similar(callback_query: types.CallbackQuery):
     
     loading_msg = await callback_query.message.answer("🔍 Ищу похожие документы с выбранными фильтрами...")
     
-    async with httpx.AsyncClient() as client:
-        payload = {
-            "query": text,
-            "top_k": top_k,
-            "engine": engine
-        }
+    payload = {
+        "query": text,
+        "top_k": top_k,
+        "engine": engine
+    }
+    
+    if selected_hubs:
+        payload["hubs"] = selected_hubs[:5]
+    if selected_tags:
+        payload["tags"] = selected_tags[:10]
+    
+    try:
+        result = await queue_client.search(payload)
         
-        if selected_hubs:
-            payload["hubs"] = selected_hubs[:5]
-        if selected_tags:
-            payload["tags"] = selected_tags[:10]
+        if result.get("error"):
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{config.API_URL}/api/v1/search/",
+                    json=payload,
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                else:
+                    await loading_msg.delete()
+                    await callback_query.message.answer(f"❌ Ошибка поиска: {response.status_code}")
+                    await callback_query.answer()
+                    return
+        else:
+            data = result
         
-        try:
-            response = await client.post(
-                f"{config.API_URL}/api/v1/search/",
-                json=payload,
-                timeout=30.0
+        results = data.get('results', [])
+        
+        await loading_msg.delete()
+        
+        if not results:
+            await callback_query.message.answer("😔 Похожих документов не найдено")
+        else:
+            applied_filters = []
+            if selected_hubs:
+                applied_filters.extend(selected_hubs[:3])
+            if selected_tags:
+                applied_filters.extend(selected_tags[:5])
+            
+            filters_msg = "🔍 *Поиск с выбранными фильтрами:* " + ", ".join(applied_filters)
+            await callback_query.message.answer(filters_msg, parse_mode='Markdown')
+            
+            await callback_query.message.answer(
+                f"✅ *Найдено {len(results)} похожих документов:*\n",
+                parse_mode='Markdown'
             )
             
-            if response.status_code == 200:
-                data = response.json()
-                results = data.get('results', [])
+            for idx, result in enumerate(results[:5], 1):
+                title = result.get('title', 'Без названия')
+                score = result.get('score', 0)
+                chunk_text = result.get('chunk_text', '')[:200]
+                url = result.get('url', '#')
                 
-                await loading_msg.delete()
+                message_text = f"*{idx}. {title}*\n"
+                message_text += f"*Score:* {score:.3f}\n"
                 
-                if not results:
-                    await callback_query.message.answer("😔 Похожих документов не найдено")
-                else:
-                    applied_filters = []
-                    if selected_hubs:
-                        applied_filters.extend(selected_hubs[:3])
-                    if selected_tags:
-                        applied_filters.extend(selected_tags[:5])
-                    
-                    filters_msg = "🔍 *Поиск с выбранными фильтрами:* " + ", ".join(applied_filters)
-                    await callback_query.message.answer(filters_msg, parse_mode='Markdown')
-                    
-                    await callback_query.message.answer(
-                        f"✅ *Найдено {len(results)} похожих документов:*\n",
-                        parse_mode='Markdown'
-                    )
-                    
-                    for idx, result in enumerate(results[:5], 1):
-                        title = result.get('title', 'Без названия')
-                        score = result.get('score', 0)
-                        chunk_text = result.get('chunk_text', '')[:200]
-                        url = result.get('url', '#')
-                        
-                        message = f"*{idx}. {title}*\n"
-                        message += f"*Score:* {score:.3f}\n"
-                        
-                        if result.get('hubs'):
-                            message += f"*Хабы:* {', '.join(result['hubs'][:2])}\n"
-                        if result.get('tags'):
-                            message += f"*Теги:* {', '.join(result['tags'][:3])}\n"
-                        
-                        message += f"\n{chunk_text}...\n"
-                        message += f"\n[Читать далее]({url})"
-                        
-                        await callback_query.message.answer(
-                            message,
-                            parse_mode='Markdown',
-                            disable_web_page_preview=True
-                        )
-            else:
-                await loading_msg.delete()
-                await callback_query.message.answer(f"❌ Ошибка поиска: {response.status_code}")
-        except httpx.TimeoutException:
-            await loading_msg.delete()
-            await callback_query.message.answer("❌ Превышено время ожидания ответа от сервера")
-        except Exception as e:
-            await loading_msg.delete()
-            await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+                if result.get('hubs'):
+                    message_text += f"*Хабы:* {', '.join(result['hubs'][:2])}\n"
+                if result.get('tags'):
+                    message_text += f"*Теги:* {', '.join(result['tags'][:3])}\n"
+                
+                message_text += f"\n{chunk_text}...\n"
+                message_text += f"\n[Читать далее]({url})"
+                
+                await callback_query.message.answer(
+                    message_text,
+                    parse_mode='Markdown',
+                    disable_web_page_preview=True
+                )
+    except Exception as e:
+        await loading_msg.delete()
+        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
     
     await callback_query.answer()
 
@@ -482,55 +546,59 @@ async def perform_search_by_query(message: types.Message, query: str):
     """Выполнение поиска по текстовому запросу"""
     loading_msg = await message.answer("🔍 Поиск...")
     
-    async with httpx.AsyncClient() as client:
-        payload = {
-            "query": query,
-            "top_k": 5,
-            "engine": "hybrid"
-        }
+    payload = {
+        "query": query,
+        "top_k": 5,
+        "engine": "hybrid"
+    }
+    
+    try:
+        result = await queue_client.search(payload)
         
-        try:
-            response = await client.post(
-                f"{config.API_URL}/api/v1/search/",
-                json=payload,
-                timeout=30.0
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                results = data.get('results', [])
+        if result.get("error"):
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{config.API_URL}/api/v1/search/",
+                    json=payload,
+                    timeout=30.0
+                )
                 
-                await loading_msg.delete()
-                
-                if not results:
-                    await message.answer("😔 Ничего не найдено")
+                if response.status_code == 200:
+                    data = response.json()
+                else:
+                    await loading_msg.delete()
+                    await message.answer(f"❌ Ошибка поиска: {response.status_code}")
                     return
-                
-                for idx, result in enumerate(results[:3], 1):
-                    title = result.get('title', 'Без названия')
-                    score = result.get('score', 0)
-                    chunk_text = result.get('chunk_text', '')[:300]
-                    url = result.get('url', '#')
-                    
-                    response_text = f"*{idx}. {title}*\n"
-                    response_text += f"*Score:* {score:.3f}\n\n"
-                    response_text += f"{chunk_text}...\n"
-                    response_text += f"\n[Читать далее]({url})"
-                    
-                    await message.answer(
-                        response_text,
-                        parse_mode='Markdown',
-                        disable_web_page_preview=True
-                    )
-            else:
-                await loading_msg.delete()
-                await message.answer(f"❌ Ошибка поиска: {response.status_code}")
-        except httpx.TimeoutException:
-            await loading_msg.delete()
-            await message.answer("❌ Превышено время ожидания ответа от сервера")
-        except Exception as e:
-            await loading_msg.delete()
-            await message.answer(f"❌ Ошибка: {str(e)}")
+        else:
+            data = result
+        
+        results = data.get('results', [])
+        
+        await loading_msg.delete()
+        
+        if not results:
+            await message.answer("😔 Ничего не найдено")
+            return
+        
+        for idx, result in enumerate(results[:3], 1):
+            title = result.get('title', 'Без названия')
+            score = result.get('score', 0)
+            chunk_text = result.get('chunk_text', '')[:300]
+            url = result.get('url', '#')
+            
+            response_text = f"*{idx}. {title}*\n"
+            response_text += f"*Score:* {score:.3f}\n\n"
+            response_text += f"{chunk_text}...\n"
+            response_text += f"\n[Читать далее]({url})"
+            
+            await message.answer(
+                response_text,
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+    except Exception as e:
+        await loading_msg.delete()
+        await message.answer(f"❌ Ошибка: {str(e)}")
 
 @router.message(F.document & F.document.file_name.endswith('.txt'))
 async def handle_txt_file(message: types.Message, bot, or_api_key: str):

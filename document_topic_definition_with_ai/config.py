@@ -45,6 +45,7 @@ class Config:
     # настройки API сервиса
     API_URL=os.getenv("API_URL")
     ML_API_URL=os.getenv("ML_API_URL")
+    SEARCH_API_URL=os.getenv("SEARCH_API_URL")
     INIT_LIMIT=os.getenv('INIT_LIMIT')
     
 

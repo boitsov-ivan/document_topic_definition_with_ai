@@ -1,6 +1,86 @@
-version: '1.0'
+version: '2.0'
 
+name: myapp_network
 services:
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  search-gateway:
+    build:
+      context: .
+      dockerfile: containers/Dockerfile.gateway
+    container_name: search-gateway
+    ports:
+      - "8002:8002"
+    depends_on:
+      - rabbitmq
+      - redis
+      - search-api
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_PASS=${RABBITMQ_PASS:-guest}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SEARCH_API_URL=http://search-api:8000
+      - GATEWAY_PORT=8002
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  search-queue-worker:
+    build:
+      context: .
+      dockerfile: containers/Dockerfile.queue_worker
+    container_name: search-queue-worker
+    depends_on:
+      - rabbitmq
+      - redis
+      - search-api
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_PASS=${RABBITMQ_PASS:-guest}
+      - REDIS_HOST=redis
+      - SEARCH_API_URL=http://search-api:8000
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - app_network
+    deploy:
+      replicas: 1
+
   # QDRANT СЕРВЕР
   qdrant:
     image: qdrant/qdrant:latest
@@ -17,6 +97,8 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - app_network
 
   # FASTAPI СЕРВИС ПОИСКА
   search-api:
@@ -42,6 +124,8 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - app_network
     depends_on:
       - qdrant
 
@@ -63,6 +147,8 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - app_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -80,11 +166,12 @@ services:
       - "8501:8501"
     depends_on:
       - search-api
-    environment:
-      - API_URL=http://search-api:8000
+      - search-gateway
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - app_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501"]
       interval: 30s
@@ -100,16 +187,26 @@ services:
     container_name: telegram-bot
     depends_on:
       - search-api
-    environment:
-      - API_URL=http://search-api:8000
+      - search-gateway
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - app_network
 
 volumes:
+  rabbitmq_data:
+    name: rabbitmq_data
+  redis_data:
+    name: redis_data
   qdrant_storage:
     name: qdrant_storage
   logs_data:
     name: logs_data
   models_cache:
     name: models_cache
+
+networks:
+  app_network:
+    name: myapp_network
+    driver: bridge

@@ -1,0 +1,61 @@
+# qdrant.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qdrant
+  namespace: document-analyzer
+spec:
+  serviceName: qdrant
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qdrant
+  template:
+    metadata:
+      labels:
+        app: qdrant
+    spec:
+      containers:
+      - name: qdrant
+        image: qdrant/qdrant:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 6333
+          name: http
+        - containerPort: 6334
+          name: grpc
+        envFrom:
+        - secretRef:
+            name: app-secrets
+        # env:
+        # - name: QDRANT__SERVICE__HTTP_PORT
+        #   value: "6333"
+        # - name: QDRANT__SERVICE__GRPC_PORT
+        #   value: "6334"
+        volumeMounts:
+        - name: qdrant-storage
+          mountPath: /qdrant/storage
+  volumeClaimTemplates:
+  - metadata:
+      name: qdrant-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant
+  namespace: document-analyzer
+spec:
+  selector:
+    app: qdrant
+  ports:
+  - name: http
+    port: 6333
+    targetPort: 6333
+  - name: grpc
+    port: 6334
+    targetPort: 6334

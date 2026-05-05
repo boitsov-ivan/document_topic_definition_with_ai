@@ -8,9 +8,9 @@ class Config:
     BASE_DIR = Path(__file__).parent
 
     # Telegram настройки
-    TELEGRAM_TOKEN = os.getenv('BOT_TOKEN', '')
+    TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '')
     if not TELEGRAM_TOKEN:
-        raise  ValueError("Переменная окружения BOT_TOKEN для телеграм не установлена!")
+        raise  ValueError("Переменная окружения TELEGRAM_TOKEN для телеграм не установлена!")
 
     # ключи API LLM
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -47,6 +47,13 @@ class Config:
     ML_API_URL=os.getenv("ML_API_URL")
     SEARCH_API_URL=os.getenv("SEARCH_API_URL")
     INIT_LIMIT=os.getenv('INIT_LIMIT')
+
+    # RMQ и redis
+    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
+    RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+    RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+    REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
     
 
 config = Config()

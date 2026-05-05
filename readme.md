@@ -77,4 +77,96 @@
 ### Показать справку
 **./start.sh --help**
 
+### Запуск вручную docker-compose
 
+#### Сборка образов и запуск контейнеров
+
+**docker-compose up -d --build**
+
+#### Остановить все контейнеры
+
+**docker-compose down**
+
+
+## Кубернетес. Запуск в Minikube
+### Создать secret.yaml из .env
+
+**./generate-secret-k8s.sh**
+
+### Сборка и запуск в Minikube скриптом
+
+откройте **k8s-deploy.sh**
+
+При наличии возможности увеличьте ресурсы:
+
+```
+print_info "Запуск Minikube..."
+minikube start --cpus=2 --memory=3096 --disk-size=10g
+```
+запустите скрипт:
+
+**./k8s-deploy.sh**
+
+
+### Сборка образов для Minikube вручную
+
+### Запустить Minikube
+```
+minikube start --cpus=2 --memory=3192 --disk-size=10g
+```
+#### Настроить окружение на Docker Minikube
+```
+eval $(minikube docker-env)
+```
+#### Собрать образы
+```
+docker build -f containers/Dockerfile.api_retrieval -t k8s-registry/search-api:latest .
+docker build -f containers/Dockerfile.gateway -t k8s-registry/gateway:latest .
+docker build -f containers/Dockerfile.queue_worker -t k8s-registry/worker:latest .
+docker build -f containers/Dockerfile.api_ml -t k8s-registry/ml-api:latest .
+docker build -f containers/Dockerfile.streamlit -t k8s-registry/streamlit:latest .
+docker build -f containers/Dockerfile.bot -t k8s-registry/telegram-bot:latest .
+```
+
+### Включить ingress
+
+minikube addons enable ingress
+
+### Применить все конфиги
+```
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secret.yaml
+kubectl apply -f k8s/pvc.yaml
+kubectl apply -f k8s/qdrant.yaml
+kubectl apply -f k8s/rabbitmq.yaml
+kubectl apply -f k8s/redis.yaml
+kubectl apply -f k8s/ml-api.yaml
+kubectl apply -f k8s/search-api.yaml
+kubectl apply -f k8s/gateway.yaml
+kubectl apply -f k8s/worker.yaml
+kubectl apply -f k8s/streamlit.yaml
+kubectl apply -f k8s/ingress.yaml
+```
+### Проверить статус
+
+kubectl get all -n document-analyzer
+
+### Открыть доступ
+
+minikube service streamlit -n document-analyzer
+
+
+#### Отркыть доступ через порт-форвардинг
+
+kubectl port-forward -n document-analyzer svc/streamlit 8501:8501
+
+
+### Остановка миникуб
+
+minikube stop
+
+
+### Удаление
+
+minikube delete

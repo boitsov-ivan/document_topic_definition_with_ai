@@ -1,0 +1,52 @@
+# streamlit.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamlit
+  namespace: document-analyzer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: streamlit
+  template:
+    metadata:
+      labels:
+        app: streamlit
+    spec:
+      containers:
+      - name: streamlit
+        image: k8s-registry/streamlit:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8501
+        envFrom:
+        - secretRef:
+            name: app-secrets
+        # env:
+        # - name: SEARCH_API_URL
+        #   valueFrom:
+        #     configMapKeyRef:
+        #       name: app-config
+        #       key: SEARCH_API_URL
+        # - name: API_URL
+        #   value: "http://search-gateway:8002"
+        # - name: ML_API_URL
+        #   valueFrom:
+        #     configMapKeyRef:
+        #       name: app-config
+        #       key: ML_API_URL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: streamlit
+  namespace: document-analyzer
+spec:
+  type: NodePort
+  selector:
+    app: streamlit
+  ports:
+  - port: 8501
+    targetPort: 8501
+    nodePort: 30085

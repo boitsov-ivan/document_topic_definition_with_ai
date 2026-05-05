@@ -1,0 +1,55 @@
+# gateway.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-gateway
+  namespace: document-analyzer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: search-gateway
+  template:
+    metadata:
+      labels:
+        app: search-gateway
+    spec:
+      containers:
+      - name: gateway
+        image: k8s-registry/gateway:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8002
+        env:
+        - name: RABBITMQ_HOST
+          value: "rabbitmq"
+        - name: RABBITMQ_PORT
+          value: "5672"
+        - name: RABBITMQ_USER
+          value: "guest"
+        - name: RABBITMQ_PASS
+          value: "guest"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: SEARCH_API_URL
+          value: "http://search-api:8000"
+        envFrom:
+        - secretRef:
+            name: app-secrets
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-gateway
+  namespace: document-analyzer
+spec:
+  type: NodePort
+  selector:
+    app: search-gateway
+  ports:
+  - port: 8002
+    targetPort: 8002
+    nodePort: 30082

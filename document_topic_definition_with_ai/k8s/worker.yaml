@@ -1,0 +1,45 @@
+# worker.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-queue-worker
+  namespace: document-analyzer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: search-worker
+  template:
+    metadata:
+      labels:
+        app: search-worker
+    spec:
+      containers:
+      - name: worker
+        image: k8s-registry/worker:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: RABBITMQ_HOST
+          value: "rabbitmq"
+        - name: RABBITMQ_PORT
+          value: "5672"
+        - name: RABBITMQ_USER
+          value: "guest"
+        - name: RABBITMQ_PASS
+          value: "guest"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: SEARCH_API_URL
+          value: "http://search-api:8000"
+        envFrom:
+        - secretRef:
+            name: app-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"

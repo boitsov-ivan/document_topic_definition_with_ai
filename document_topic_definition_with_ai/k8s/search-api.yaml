@@ -1,0 +1,71 @@
+# search-api.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-api
+  namespace: document-analyzer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: search-api
+  template:
+    metadata:
+      labels:
+        app: search-api
+    spec:
+      containers:
+      - name: search-api
+        image: k8s-registry/search-api:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: QDRANT_PORT
+          value: "6333"
+        - name: QDRANT_HOST
+          value: "qdrant"
+        envFrom:
+        - secretRef:
+            name: app-secrets
+        # env:
+        # - name: QDRANT_HOST
+        #   valueFrom:
+        #     configMapKeyRef:
+        #       name: app-config
+        #       key: QDRANT_HOST
+        # - name: QDRANT_PORT
+        #   valueFrom:
+        #     configMapKeyRef:
+        #       name: app-config
+        #       key: QDRANT_PORT
+        volumeMounts:
+        - name: models-cache
+          mountPath: /app/data/models_cache
+        - name: logs-data
+          mountPath: /app/data/logs
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      volumes:
+      - name: models-cache
+        persistentVolumeClaim:
+          claimName: models-pvc
+      - name: logs-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-api
+  namespace: document-analyzer
+spec:
+  selector:
+    app: search-api
+  ports:
+  - port: 8000
+    targetPort: 8000

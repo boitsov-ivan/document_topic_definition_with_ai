@@ -1,0 +1,14 @@
+# configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: document-analyzer
+data:
+  RABBITMQ_HOST: "rabbitmq"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  SEARCH_API_URL: "http://search-api:8000"
+  ML_API_URL: "http://ml-api:8001"
+  QDRANT_HOST: "qdrant"
+  QDRANT_PORT: "6333"

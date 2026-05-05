@@ -1,0 +1,54 @@
+# ml-api.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-api
+  namespace: document-analyzer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ml-api
+  template:
+    metadata:
+      labels:
+        app: ml-api
+    spec:
+      containers:
+      - name: ml-api
+        image: k8s-registry/ml-api:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8001
+        envFrom:
+        - secretRef:
+            name: app-secrets
+        # env:
+        # - name: MODELS_CACHE
+        #   value: /app/data/models_cache
+        volumeMounts:
+        - name: models-cache
+          mountPath: /app/data/models_cache
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+      volumes:
+      - name: models-cache
+        persistentVolumeClaim:
+          claimName: models-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-api
+  namespace: document-analyzer
+spec:
+  selector:
+    app: ml-api
+  ports:
+  - port: 8001
+    targetPort: 8001

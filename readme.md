@@ -4,8 +4,8 @@
 
 **cd document_topic_definition_with_ai**
 
-заполням файл .env.example
-и сохраняем его в .env
+заполням файл **.env.example**
+и сохраняем его в **.env**
 
 ## Загрузка моделей и документов для информационного поиска
 Перед деплоем сервиса необходимо загрузить модели и документы для векторного поиска похожих.
@@ -146,6 +146,7 @@ kubectl apply -f k8s/search-api.yaml
 kubectl apply -f k8s/gateway.yaml
 kubectl apply -f k8s/worker.yaml
 kubectl apply -f k8s/streamlit.yaml
+kubectl apply -f k8s/telegram-bot.yaml
 kubectl apply -f k8s/ingress.yaml
 ```
 ### Проверить статус

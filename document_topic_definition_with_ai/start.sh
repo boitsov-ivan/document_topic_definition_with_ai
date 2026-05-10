@@ -282,10 +282,10 @@ main() {
     fi
     
     if docker-compose ps telegram-bot 2>/dev/null | grep -q "Up"; then
-        if grep -q "BOT_TOKEN" .env 2>/dev/null; then
+        if grep -q "TELEGRAM_TOKEN" .env 2>/dev/null; then
             print_success " Telegram бот запущен"
         else
-            print_warning "Telegram бот запущен, но BOT_TOKEN не настроен"
+            print_warning "Telegram бот запущен, но TELEGRAM_TOKEN не настроен"
         fi
     fi
     

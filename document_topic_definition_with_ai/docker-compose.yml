@@ -5,9 +5,9 @@ services:
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
     container_name: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+    # ports:
+    #   - "5672:5672"
+    #   - "15672:15672"
     environment:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-guest}
@@ -25,8 +25,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: redis
-    ports:
-      - "6379:6379"
+    # ports:
+    #   - "6379:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -38,8 +38,8 @@ services:
       context: .
       dockerfile: containers/Dockerfile.gateway
     container_name: search-gateway
-    ports:
-      - "8002:8002"
+    # ports:
+    #   - "8002:8002"
     depends_on:
       - rabbitmq
       - redis
@@ -85,9 +85,9 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant
-    ports:
-      - "6333:6333"  # REST API
-      - "6334:6334"  # gRPC API
+    # ports:
+    #   - "6333:6333"  # REST API
+    #   - "6334:6334"  # gRPC API
     volumes:
       - qdrant_storage:/qdrant/storage
     environment:
@@ -106,8 +106,8 @@ services:
       context: .
       dockerfile: containers/Dockerfile.api_retrieval
     container_name: search-api
-    ports:
-      - "8000:8000"
+    # ports:
+    #   - "8000:8000"
     volumes:
       - logs_data:/app/data/logs
       - models_cache:/app/data/models_cache
@@ -135,8 +135,8 @@ services:
       dockerfile: containers/Dockerfile.api_ml
       #dockerfile: containers/Dockerfile.api_ml_full
     container_name: ml-api
-    ports:
-      - "8001:8001"
+    # ports:
+    #   - "8001:8001"
     environment:
       - API_HOST=0.0.0.0
       - API_PORT=8001

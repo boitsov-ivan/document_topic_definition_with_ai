@@ -229,8 +229,9 @@ def get_summary(query_text: str):
 with st.sidebar:
     st.header("⚙️ Настройки поиска")
     
-    use_queue = st.toggle("🔁 Использовать очередь (RabbitMQ)", value=st.session_state.use_queue, 
-                          help="Включите для асинхронной обработки через очередь")
+    # use_queue = st.toggle("🔁 Использовать очередь (RabbitMQ)", value=st.session_state.use_queue, 
+    #                       help="Включите для асинхронной обработки через очередь")
+    use_queue = True
     st.session_state.use_queue = use_queue
     
     default_engines = ["dense", "hybrid", "rerank", "full"]
@@ -511,7 +512,6 @@ with st.expander("ℹ️ Информация"):
     3. **Краткий пересказ** - подготовит краткий пересказ введённого документа
     4. **Выберите фильтры** в боковой панели (хабы/теги), которые хотите применить для фильтрации документов в поисковой базе данных
     5. **Поиск** - найдет документы с учетом выбранных фильтров
-    6. **Использовать очередь** - включает асинхронную обработку через RabbitMQ (с прогресс-баром)
     
     ### API Endpoints
     - `POST /api/v1/search/` - поиск документов
